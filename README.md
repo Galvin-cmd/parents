@@ -8,6 +8,8 @@ GitHub Pages 发布后可访问：
 
 https://galvin-cmd.github.io/parents/
 
+发布来源使用 GitHub Actions。
+
 ## 已覆盖
 
 - 工作台：孩子状态、快捷呼叫、实时定位入口、家庭 Agent、今日任务
