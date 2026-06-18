@@ -5,9 +5,11 @@
 ## 已安装
 
 - Homebrew：已安装到 `/opt/homebrew`
-- Flutter：已安装，`flutter doctor` 通过 Flutter 本体检查
+- Flutter：已安装，`flutter doctor` 全部通过
 - Android Studio：已安装到 `/Applications/Android Studio.app`
 - Android SDK：已安装，Flutter Android toolchain 已通过
+- Xcode 26.5：已安装到 `/Applications/Xcode.app`
+- iOS 26.5 Simulator：已安装，Flutter iOS toolchain 已通过
 - VS Code：已安装到 `/Applications/Visual Studio Code.app`
 - Python 3.11：已安装
 - FastAPI 项目虚拟环境：已创建 `.venv`
@@ -16,16 +18,6 @@
 - OpenJDK 17：已安装，用于 Android SDK
 
 ## 还需要手动完成
-
-### Xcode
-
-完整 Xcode 需要从 App Store 或 Apple Developer 网站手动安装。安装完成后运行：
-
-```bash
-sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
-sudo xcodebuild -runFirstLaunch
-sudo xcodebuild -license accept
-```
 
 ### Docker Desktop
 
@@ -63,6 +55,18 @@ flutter doctor
 python3.11 --version
 psql --version
 pod --version
+```
+
+当前 `flutter doctor` 状态：
+
+```text
+[✓] Flutter
+[✓] Android toolchain
+[✓] Xcode
+[✓] Chrome
+[✓] Connected device
+[✓] Network resources
+No issues found.
 ```
 
 ## 后端启动
