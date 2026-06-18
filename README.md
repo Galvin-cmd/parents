@@ -47,6 +47,7 @@ python3 -m uvicorn backend.app.main:app --reload
 - [`docs/mvp-scope.md`](./docs/mvp-scope.md)：MVP 范围
 - [`docs/api-contract.md`](./docs/api-contract.md)：后端接口草案
 - [`docs/tech-stack-decision.md`](./docs/tech-stack-decision.md)：技术栈决策
+- [`docs/environment-setup.md`](./docs/environment-setup.md)：本地环境安装状态
 
 ## 提交脚本
 
