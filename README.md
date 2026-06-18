@@ -2,6 +2,12 @@
 
 这是根据 MVP 优先级搭建的前端流程原型，当前不依赖后端接口，使用本地 mock 数据完成主要交互。
 
+## 在线预览
+
+GitHub Pages 发布后可访问：
+
+https://galvin-cmd.github.io/parents/
+
 ## 已覆盖
 
 - 工作台：孩子状态、快捷呼叫、实时定位入口、家庭 Agent、今日任务
@@ -19,3 +25,11 @@ python3 -m http.server 5173
 ```
 
 然后访问 `http://127.0.0.1:5173`。
+
+## 后续路线
+
+下一阶段建议见：
+
+- [`docs/next-steps.md`](./docs/next-steps.md)：迭代路线
+- [`docs/mvp-scope.md`](./docs/mvp-scope.md)：MVP 范围
+- [`docs/api-contract.md`](./docs/api-contract.md)：后端接口草案
