@@ -21,10 +21,10 @@ https://galvin-cmd.github.io/parents/
 直接打开 `index.html` 即可预览。也可以在项目目录运行：
 
 ```bash
-python3 -m http.server 5173
+python3 backend/server.py
 ```
 
-然后访问 `http://127.0.0.1:5173`。
+然后访问 `http://127.0.0.1:5173`。这个服务会同时提供前端页面和 `/api/v1` mock 接口。
 
 ## 后续路线
 

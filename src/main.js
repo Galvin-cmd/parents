@@ -557,6 +557,20 @@ function render() {
   `;
 }
 
+async function loadRemoteState() {
+  if (window.location.protocol === 'file:') return;
+  try {
+    const response = await fetch('/api/v1/bootstrap');
+    if (!response.ok) return;
+    const payload = await response.json();
+    if (payload.code !== 0 || !payload.data) return;
+    Object.assign(state, payload.data);
+    render();
+  } catch (error) {
+    console.info('Using local mock data.');
+  }
+}
+
 function addAgentMessage(text) {
   state.messages.push({ from: 'parent', text });
   if (text.includes('阅读') || text.includes('任务') || text.includes('提醒')) {
@@ -675,3 +689,4 @@ document.addEventListener('submit', (event) => {
 });
 
 render();
+loadRemoteState();
