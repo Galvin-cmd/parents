@@ -33,3 +33,11 @@ python3 backend/server.py
 - [`docs/next-steps.md`](./docs/next-steps.md)：迭代路线
 - [`docs/mvp-scope.md`](./docs/mvp-scope.md)：MVP 范围
 - [`docs/api-contract.md`](./docs/api-contract.md)：后端接口草案
+
+## 提交脚本
+
+如果 Codex 暂时不能直接写入 Git，可以运行：
+
+```bash
+./scripts/push.sh "提交说明"
+```
