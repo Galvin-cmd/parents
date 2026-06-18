@@ -43,3 +43,5 @@ python3 backend/server.py
 ```bash
 ./scripts/push.sh "提交说明"
 ```
+
+工作区写入权限开启后，Codex 会在完成改动后优先尝试运行这个脚本。
