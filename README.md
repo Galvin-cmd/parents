@@ -30,6 +30,15 @@ python3 backend/server.py
 
 本地服务会把任务、联系人、守护区域和管控开关保存到 `backend/data/store.json`。这个文件是运行数据，不会提交到 GitHub。
 
+FastAPI 骨架已保留同样的 `/api/v1` 接口路径。安装依赖后可运行：
+
+```bash
+python3 -m pip install -r backend/requirements.txt
+python3 -m uvicorn backend.app.main:app --reload
+```
+
+然后访问 `http://127.0.0.1:8000/docs` 查看接口文档。
+
 ## 后续路线
 
 下一阶段建议见：
@@ -37,6 +46,7 @@ python3 backend/server.py
 - [`docs/next-steps.md`](./docs/next-steps.md)：迭代路线
 - [`docs/mvp-scope.md`](./docs/mvp-scope.md)：MVP 范围
 - [`docs/api-contract.md`](./docs/api-contract.md)：后端接口草案
+- [`docs/tech-stack-decision.md`](./docs/tech-stack-decision.md)：技术栈决策
 
 ## 提交脚本
 
