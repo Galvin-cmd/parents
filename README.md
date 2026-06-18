@@ -28,6 +28,8 @@ python3 backend/server.py
 
 然后访问 `http://127.0.0.1:5173`。这个服务会同时提供前端页面和 `/api/v1` mock 接口。
 
+本地服务会把任务、联系人、守护区域和管控开关保存到 `backend/data/store.json`。这个文件是运行数据，不会提交到 GitHub。
+
 ## 后续路线
 
 下一阶段建议见：

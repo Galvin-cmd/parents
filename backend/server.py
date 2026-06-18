@@ -8,9 +8,11 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 CHILD_ID = "child_001"
+DATA_DIR = ROOT / "backend" / "data"
+DATA_PATH = DATA_DIR / "store.json"
 
 
-STORE = {
+DEFAULT_STORE = {
     "family": {
         "familyId": "fam_001",
         "members": [
@@ -81,6 +83,20 @@ STORE = {
         "disclaimer": "健康和心情数据仅作辅助观察，不构成医疗或心理诊断。",
     },
 }
+
+
+def load_store():
+    if not DATA_PATH.exists():
+        return json.loads(json.dumps(DEFAULT_STORE, ensure_ascii=False))
+    return json.loads(DATA_PATH.read_text(encoding="utf-8"))
+
+
+def save_store():
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_PATH.write_text(json.dumps(STORE, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+STORE = load_store()
 
 
 def ok(data=None, message="ok"):
@@ -160,6 +176,7 @@ def route(method, raw_path, body=None):
         return ok(STORE["device"])
     if method == "POST" and path == "/api/v1/devices/bind":
         STORE["device"]["lastSyncAt"] = "2026-06-18T23:30:00+08:00"
+        save_store()
         return ok({"deviceId": STORE["device"]["deviceId"], "bindCode": body.get("bindCode")}, "device bound")
     if method == "GET" and re.fullmatch(r"/api/v1/children/[^/]+/location/current", path):
         return ok(STORE["location"])
@@ -176,6 +193,7 @@ def route(method, raw_path, body=None):
             "enabled": bool(body.get("enabled", True)),
         }
         STORE["zones"].append(zone)
+        save_store()
         return ok(zone, "zone created")
     zone_match = re.fullmatch(r"/api/v1/geo-zones/([^/]+)", path)
     if method == "PATCH" and zone_match:
@@ -183,6 +201,7 @@ def route(method, raw_path, body=None):
         for zone in STORE["zones"]:
             if zone["id"] == zone_id:
                 zone.update({k: v for k, v in body.items() if k in {"name", "type", "range", "enabled"}})
+                save_store()
                 return ok(zone, "zone updated")
         return error(404, "zone not found")
     if method == "GET" and re.fullmatch(r"/api/v1/children/[^/]+/tasks", path):
@@ -196,6 +215,7 @@ def route(method, raw_path, body=None):
             "done": False,
         }
         STORE["tasks"].insert(0, task)
+        save_store()
         return ok(task, "task created")
     task_match = re.fullmatch(r"/api/v1/tasks/([^/]+)", path)
     if method == "PATCH" and task_match:
@@ -203,6 +223,7 @@ def route(method, raw_path, body=None):
         for task in STORE["tasks"]:
             if task["id"] == task_id:
                 task.update({k: v for k, v in body.items() if k in {"title", "time", "reward", "done"}})
+                save_store()
                 return ok(task, "task updated")
         return error(404, "task not found")
     if method == "GET" and re.fullmatch(r"/api/v1/children/[^/]+/control/modes", path):
@@ -216,6 +237,7 @@ def route(method, raw_path, body=None):
                     mode["active"] = bool(body["enabled"])
                 if "schedule" in body:
                     mode["time"] = body["schedule"]
+                save_store()
                 return ok(mode, "mode updated")
         return error(404, "mode not found")
     if method == "GET" and re.fullmatch(r"/api/v1/children/[^/]+/apps/usage", path):
@@ -226,6 +248,7 @@ def route(method, raw_path, body=None):
         for app in STORE["apps"]:
             if app["id"] == app_id:
                 app.update({k: v for k, v in body.items() if k in {"enabled", "locked"}})
+                save_store()
                 return ok(app, "app updated")
         return error(404, "app not found")
     if method == "GET" and re.fullmatch(r"/api/v1/children/[^/]+/contacts", path):
@@ -239,6 +262,7 @@ def route(method, raw_path, body=None):
             "trusted": bool(body.get("trusted", True)),
         }
         STORE["contacts"].append(contact)
+        save_store()
         return ok(contact, "contact created")
     if method == "POST" and re.fullmatch(r"/api/v1/children/[^/]+/agent/messages", path):
         text = body.get("text", "")
@@ -261,6 +285,8 @@ def route(method, raw_path, body=None):
                     mode["active"] = True
             actions.append({"type": "mode.enabled", "modeId": "sleep"})
             reply = "已开启睡眠模式计划，今晚自动生效。"
+        if actions:
+            save_store()
         return ok({"reply": reply, "actions": actions})
     if method == "GET" and re.fullmatch(r"/api/v1/children/[^/]+/reports/weekly", path):
         return ok(STORE["report"])

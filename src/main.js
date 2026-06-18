@@ -81,6 +81,31 @@ const tabs = [
 ];
 
 const root = document.querySelector('#app');
+let apiReady = false;
+
+async function apiRequest(path, options = {}) {
+  if (window.location.protocol === 'file:') return null;
+  try {
+    const response = await fetch(path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return payload.code === 0 ? payload.data : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function syncRemoteState() {
+  const data = await apiRequest('/api/v1/bootstrap');
+  if (!data) return false;
+  Object.assign(state, data);
+  apiReady = true;
+  render();
+  return true;
+}
 
 function setState(patch) {
   Object.assign(state, patch);
@@ -257,7 +282,7 @@ function zoneItem(zone, index) {
         <strong>${zone.name}</strong>
         <span>${zone.type} · ${zone.range}</span>
       </div>
-      <label class="switch"><input type="checkbox" data-action="toggleZone" data-id="${index}" ${zone.enabled ? 'checked' : ''}><span></span></label>
+      <label class="switch"><input type="checkbox" data-action="toggleZone" data-id="${zone.id || index}" data-index="${index}" ${zone.enabled ? 'checked' : ''}><span></span></label>
     </article>
   `;
 }
@@ -361,7 +386,7 @@ function appItem(app, index) {
         <strong>${app.name}</strong>
         <span>今日 ${app.minutes} 分钟${app.locked ? ' · 学习时段禁用' : ''}</span>
       </div>
-      <label class="switch"><input type="checkbox" data-action="toggleApp" data-id="${index}" ${app.enabled ? 'checked' : ''}><span></span></label>
+      <label class="switch"><input type="checkbox" data-action="toggleApp" data-id="${app.id || index}" data-index="${index}" ${app.enabled ? 'checked' : ''}><span></span></label>
     </article>
   `;
 }
@@ -558,21 +583,24 @@ function render() {
 }
 
 async function loadRemoteState() {
-  if (window.location.protocol === 'file:') return;
-  try {
-    const response = await fetch('/api/v1/bootstrap');
-    if (!response.ok) return;
-    const payload = await response.json();
-    if (payload.code !== 0 || !payload.data) return;
-    Object.assign(state, payload.data);
-    render();
-  } catch (error) {
-    console.info('Using local mock data.');
-  }
+  const loaded = await syncRemoteState();
+  if (!loaded) console.info('Using local mock data.');
 }
 
-function addAgentMessage(text) {
+async function addAgentMessage(text) {
   state.messages.push({ from: 'parent', text });
+  if (apiReady) {
+    const childId = state.child.id || 'child_001';
+    const result = await apiRequest(`/api/v1/children/${childId}/agent/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+    if (result) {
+      state.messages.push({ from: 'agent', text: result.reply });
+      await syncRemoteState();
+      return;
+    }
+  }
   if (text.includes('阅读') || text.includes('任务') || text.includes('提醒')) {
     state.tasks.unshift({
       id: Date.now(),
@@ -593,7 +621,7 @@ function addAgentMessage(text) {
   state.messages.push({ from: 'agent', text: `已收到。我会把“${text.slice(0, 18)}”转成可执行提醒，接口上线后自动同步。` });
 }
 
-document.addEventListener('click', (event) => {
+document.addEventListener('click', async (event) => {
   const tab = event.target.closest('[data-tab]');
   if (tab) setState({ activeTab: tab.dataset.tab });
 
@@ -608,48 +636,111 @@ document.addEventListener('click', (event) => {
   }
   if (action === 'closeModal') setState({ modal: null });
   if (action === 'useSuggestion') {
-    addAgentMessage(actionNode.dataset.text);
+    await addAgentMessage(actionNode.dataset.text);
     setState({ modal: null, activeTab: 'workbench' });
     toast('Agent 已生成可执行项');
   }
   if (action === 'toggleTask') {
-    const task = state.tasks.find((item) => item.id === Number(id));
-    if (task) task.done = !task.done;
+    const task = state.tasks.find((item) => String(item.id) === String(id));
+    if (task) {
+      const done = !task.done;
+      if (apiReady) {
+        const result = await apiRequest(`/api/v1/tasks/${task.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ done }),
+        });
+        if (result) {
+          await syncRemoteState();
+          toast(done ? '任务已完成' : '任务已恢复');
+          return;
+        }
+      }
+      task.done = done;
+    }
     render();
   }
   if (action === 'remindTask') toast('提醒已同步到手表');
   if (action === 'selectMode') setState({ selectedMode: id });
 });
 
-document.addEventListener('change', (event) => {
+document.addEventListener('change', async (event) => {
   const node = event.target.closest('[data-action]');
   if (!node) return;
   if (node.dataset.action === 'toggleZone') {
-    state.zones[Number(node.dataset.id)].enabled = node.checked;
+    const index = Number(node.dataset.index);
+    const zone = state.zones[index];
+    if (apiReady && zone?.id) {
+      await apiRequest(`/api/v1/geo-zones/${zone.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: node.checked }),
+      });
+      await syncRemoteState();
+    } else if (zone) {
+      zone.enabled = node.checked;
+    }
     toast(node.checked ? '守护区域已开启' : '守护区域已关闭');
   }
   if (node.dataset.action === 'toggleApp') {
-    state.apps[Number(node.dataset.id)].enabled = node.checked;
+    const index = Number(node.dataset.index);
+    const app = state.apps[index];
+    if (apiReady && app?.id) {
+      const childId = state.child.id || 'child_001';
+      await apiRequest(`/api/v1/children/${childId}/apps/${app.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: node.checked }),
+      });
+      await syncRemoteState();
+    } else if (app) {
+      app.enabled = node.checked;
+    }
     toast(node.checked ? '应用已允许使用' : '应用已禁用');
   }
   if (node.dataset.action === 'toggleMode') {
     const mode = state.modes.find((item) => item.id === node.dataset.id);
-    if (mode) mode.active = node.checked;
+    if (mode) {
+      if (apiReady) {
+        const childId = state.child.id || 'child_001';
+        await apiRequest(`/api/v1/children/${childId}/control/modes/${mode.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ enabled: node.checked }),
+        });
+        await syncRemoteState();
+      } else {
+        mode.active = node.checked;
+      }
+    }
   }
   render();
 });
 
-document.addEventListener('submit', (event) => {
+document.addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.target;
   const data = new FormData(form);
   if (form.dataset.form === 'agent') {
     const text = data.get('agentText')?.trim();
-    if (text) addAgentMessage(text);
+    if (text) await addAgentMessage(text);
     state.input = '';
     render();
   }
   if (form.dataset.form === 'task') {
+    if (apiReady) {
+      const childId = state.child.id || 'child_001';
+      const result = await apiRequest(`/api/v1/children/${childId}/tasks`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: data.get('title'),
+          time: data.get('time'),
+          reward: Number(data.get('reward')),
+        }),
+      });
+      if (result) {
+        await syncRemoteState();
+        setState({ modal: null, activeTab: 'growth' });
+        toast('任务已创建');
+        return;
+      }
+    }
     state.tasks.unshift({
       id: Date.now(),
       title: data.get('title'),
@@ -661,6 +752,25 @@ document.addEventListener('submit', (event) => {
     toast('任务已创建');
   }
   if (form.dataset.form === 'zone') {
+    if (apiReady) {
+      const childId = state.child.id || 'child_001';
+      const result = await apiRequest(`/api/v1/children/${childId}/geo-zones`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: data.get('name'),
+          type: data.get('type'),
+          range: data.get('range'),
+          enabled: true,
+        }),
+      });
+      if (result) {
+        state.alerts.unshift({ level: 'ok', title: '守护区域已添加', detail: `${data.get('name')} 已开启进入/离开提醒` });
+        await syncRemoteState();
+        setState({ modal: null, activeTab: 'safety' });
+        toast('守护区域已添加');
+        return;
+      }
+    }
     state.zones.push({
       name: data.get('name'),
       type: data.get('type'),
@@ -672,11 +782,39 @@ document.addEventListener('submit', (event) => {
     toast('守护区域已添加');
   }
   if (form.dataset.form === 'bind') {
+    if (apiReady) {
+      const result = await apiRequest('/api/v1/devices/bind', {
+        method: 'POST',
+        body: JSON.stringify({
+          bindCode: data.get('code'),
+          childId: state.child.id || 'child_001',
+        }),
+      });
+      if (result) await syncRemoteState();
+    }
     state.child.lastSync = '刚刚';
     setState({ modal: null });
     toast('设备绑定流程已完成');
   }
   if (form.dataset.form === 'contact') {
+    if (apiReady) {
+      const childId = state.child.id || 'child_001';
+      const result = await apiRequest(`/api/v1/children/${childId}/contacts`, {
+        method: 'POST',
+        body: JSON.stringify({
+          name: data.get('name'),
+          relation: data.get('relation'),
+          phone: data.get('phone'),
+          trusted: true,
+        }),
+      });
+      if (result) {
+        await syncRemoteState();
+        setState({ modal: null, activeTab: 'control' });
+        toast('联系人已加入白名单');
+        return;
+      }
+    }
     state.contacts.push({
       name: data.get('name'),
       relation: data.get('relation'),
