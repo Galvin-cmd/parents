@@ -23,6 +23,10 @@ const state = {
     updatedAt: '23:12',
     accuracy: '28m',
   },
+  alerts: [
+    { level: 'ok', title: '到校确认', detail: '07:58 已进入星河小学安全区' },
+    { level: 'warn', title: '电量提醒', detail: '预计还能使用 8 小时，睡前建议充电' },
+  ],
   messages: [
     { from: 'agent', text: '今天 16:42 已到达星河小学北门，路线稳定。' },
     { from: 'parent', text: '放学后提醒豆豆先完成阅读任务。' },
@@ -39,9 +43,10 @@ const state = {
     { name: '城南施工段', type: '危险区', range: '200m', enabled: true },
   ],
   tracks: [
-    { time: '07:36', place: '家', detail: '离家' },
-    { time: '07:58', place: '星河小学', detail: '到校' },
-    { time: '16:42', place: '星河小学北门', detail: '放学等待' },
+    { time: '07:36', place: '家', detail: '离家', status: '正常', distance: '0km' },
+    { time: '07:51', place: '梧桐路公交站', detail: '通勤中', status: '正常', distance: '1.6km' },
+    { time: '07:58', place: '星河小学', detail: '到校', status: '进入安全区', distance: '2.2km' },
+    { time: '16:42', place: '星河小学北门', detail: '放学等待', status: '安全区内', distance: '2.2km' },
   ],
   contacts: [
     { name: '妈妈', relation: '管理员', phone: '138 1024 8848', trusted: true },
@@ -134,6 +139,13 @@ function childStatusCard() {
 function workbench() {
   return `
     ${childStatusCard()}
+    <section class="summary-band">
+      <button data-action="locate"><b>${state.location.place}</b><span>${state.location.status} · ${state.location.accuracy}</span></button>
+      <button data-action="track"><b>${state.tracks.length} 个轨迹点</b><span>今日路线稳定</span></button>
+    </section>
+    <section class="alert-stack">
+      ${state.alerts.map(alertItem).join('')}
+    </section>
     <section class="quick-grid">
       ${quickAction('call', '☎', '语音呼叫', '立即联系孩子')}
       ${quickAction('video', '▣', '视频呼叫', '确认状态')}
@@ -163,6 +175,15 @@ function workbench() {
         ${state.tasks.map(taskCard).join('')}
       </div>
     </section>
+  `;
+}
+
+function alertItem(alert) {
+  return `
+    <article class="alert ${alert.level}">
+      <span>${alert.level === 'ok' ? '✓' : '!'}</span>
+      <div><strong>${alert.title}</strong><small>${alert.detail}</small></div>
+    </article>
   `;
 }
 
@@ -203,7 +224,14 @@ function safety() {
         <span class="road road-a"></span>
         <span class="road road-b"></span>
         <span class="zone"></span>
+        <span class="map-label home">家</span>
+        <span class="map-label school">学校</span>
         <span class="pin">豆</span>
+      </div>
+      <div class="safety-status">
+        <div><strong>最近同步</strong><span>${state.location.updatedAt}</span></div>
+        <div><strong>路线判断</strong><span>未发现异常绕行</span></div>
+        <div><strong>守护状态</strong><span>${state.zones.filter((zone) => zone.enabled).length} 个区域开启</span></div>
       </div>
       <div class="map-actions">
         ${quickAction('track', '⌁', '历史轨迹', '查看今日路线')}
@@ -231,6 +259,35 @@ function zoneItem(zone, index) {
       </div>
       <label class="switch"><input type="checkbox" data-action="toggleZone" data-id="${index}" ${zone.enabled ? 'checked' : ''}><span></span></label>
     </article>
+  `;
+}
+
+function trackDetail() {
+  return `
+    <div class="track-detail">
+      ${state.tracks.map((track) => `
+        <article>
+          <time>${track.time}</time>
+          <div>
+            <strong>${track.place}</strong>
+            <span>${track.detail} · ${track.status} · 距离 ${track.distance}</span>
+          </div>
+        </article>
+      `).join('')}
+    </div>
+  `;
+}
+
+function zoneSummary() {
+  return `
+    <div class="zone-summary">
+      ${state.zones.map((zone) => `
+        <article>
+          <strong>${zone.name}</strong>
+          <span>${zone.type} · ${zone.range} · ${zone.enabled ? '已开启' : '已关闭'}</span>
+        </article>
+      `).join('')}
+    </div>
   `;
 }
 
@@ -389,6 +446,68 @@ function modal() {
         <button class="primary" type="submit">加入白名单</button>
       </form>
     `,
+    addZone: `
+      <h2>添加守护区域</h2>
+      <form data-form="zone" class="modal-form">
+        <label>区域名称<input name="name" required value="外婆家"></label>
+        <label>区域类型<input name="type" required value="安全区"></label>
+        <label>范围<input name="range" required value="200m"></label>
+        <button class="primary" type="submit">保存并开启</button>
+      </form>
+    `,
+    track: `
+      <h2>今日轨迹详情</h2>
+      <p>路线用于辅助观察，定位精度会受网络、建筑和设备状态影响。</p>
+      ${trackDetail()}
+      <button class="primary" data-action="closeModal">知道了</button>
+    `,
+    zone: `
+      <h2>守护区域</h2>
+      <p>开启后，孩子进入或离开对应区域时会提醒家长。</p>
+      ${zoneSummary()}
+      <button class="primary" data-action="addZone">添加区域</button>
+    `,
+    locate: `
+      <h2>定位已刷新</h2>
+      <p>当前在 ${state.location.place}，${state.location.status}，精度 ${state.location.accuracy}。</p>
+      <div class="result-card"><strong>同步结果</strong><span>设备在线，路线稳定，未发现异常停留。</span></div>
+      <button class="primary" data-action="closeModal">知道了</button>
+    `,
+    findWatch: `
+      <h2>寻找手表</h2>
+      <p>已向手表发送响铃指令。正式接入设备后，这里会显示指令送达和响铃状态。</p>
+      <div class="result-card"><strong>预计响铃</strong><span>60 秒，可在手表端手动停止。</span></div>
+      <button class="primary" data-action="closeModal">完成</button>
+    `,
+    call: `
+      <h2>语音呼叫</h2>
+      <p>正在准备拨打 ${state.child.name} 的手表号码。</p>
+      <div class="result-card"><strong>${state.child.phone}</strong><span>白名单联系人呼叫，允许接通。</span></div>
+      <button class="primary" data-action="closeModal">结束演示</button>
+    `,
+    video: `
+      <h2>视频呼叫</h2>
+      <p>视频呼叫入口已保留，后续需要接入设备音视频能力。</p>
+      <div class="result-card"><strong>家长确认</strong><span>视频能力建议只对白名单管理员开放。</span></div>
+      <button class="primary" data-action="closeModal">知道了</button>
+    `,
+    suggest: `
+      <h2>快捷建议</h2>
+      <div class="suggest-list">
+        <button data-action="useSuggestion" data-text="今晚 19:30 提醒豆豆阅读 15 分钟">阅读提醒</button>
+        <button data-action="useSuggestion" data-text="放学后如果离开学校安全区，请提醒我">离校提醒</button>
+        <button data-action="useSuggestion" data-text="今晚 21:00 自动切换睡眠模式">睡眠模式</button>
+      </div>
+    `,
+    weeklyPlan: `
+      <h2>下周行动建议</h2>
+      <div class="plan-list">
+        <article><strong>固定睡前节奏</strong><span>20:50 整理书包，21:00 刷牙，21:30 睡眠模式。</span></article>
+        <article><strong>娱乐后置</strong><span>作业任务完成后再开启故事应用 20 分钟。</span></article>
+        <article><strong>安全复核</strong><span>保留学校和外婆家安全区，新增周末兴趣班提醒区。</span></article>
+      </div>
+      <button class="primary" data-action="closeModal">采纳为下周计划</button>
+    `,
   }[state.modal] || `<h2>已记录</h2><p>该能力已作为正式工程入口保留，后续可接入真实接口。</p><button class="primary" data-action="closeModal">知道了</button>`;
 
   return `
@@ -440,6 +559,23 @@ function render() {
 
 function addAgentMessage(text) {
   state.messages.push({ from: 'parent', text });
+  if (text.includes('阅读') || text.includes('任务') || text.includes('提醒')) {
+    state.tasks.unshift({
+      id: Date.now(),
+      title: text.includes('阅读') ? '阅读课外书 15 分钟' : text.slice(0, 18),
+      time: text.includes('19:30') ? '19:30' : '20:00',
+      reward: 6,
+      done: false,
+    });
+    state.messages.push({ from: 'agent', text: '已创建任务并放入今日任务列表，后端接入后会同步到手表。' });
+    return;
+  }
+  if (text.includes('睡眠')) {
+    const mode = state.modes.find((item) => item.id === 'sleep');
+    if (mode) mode.active = true;
+    state.messages.push({ from: 'agent', text: '已开启睡眠模式计划，今晚 21:30 自动生效。' });
+    return;
+  }
   state.messages.push({ from: 'agent', text: `已收到。我会把“${text.slice(0, 18)}”转成可执行提醒，接口上线后自动同步。` });
 }
 
@@ -457,6 +593,11 @@ document.addEventListener('click', (event) => {
     setState({ modal: action });
   }
   if (action === 'closeModal') setState({ modal: null });
+  if (action === 'useSuggestion') {
+    addAgentMessage(actionNode.dataset.text);
+    setState({ modal: null, activeTab: 'workbench' });
+    toast('Agent 已生成可执行项');
+  }
   if (action === 'toggleTask') {
     const task = state.tasks.find((item) => item.id === Number(id));
     if (task) task.done = !task.done;
@@ -469,8 +610,14 @@ document.addEventListener('click', (event) => {
 document.addEventListener('change', (event) => {
   const node = event.target.closest('[data-action]');
   if (!node) return;
-  if (node.dataset.action === 'toggleZone') state.zones[Number(node.dataset.id)].enabled = node.checked;
-  if (node.dataset.action === 'toggleApp') state.apps[Number(node.dataset.id)].enabled = node.checked;
+  if (node.dataset.action === 'toggleZone') {
+    state.zones[Number(node.dataset.id)].enabled = node.checked;
+    toast(node.checked ? '守护区域已开启' : '守护区域已关闭');
+  }
+  if (node.dataset.action === 'toggleApp') {
+    state.apps[Number(node.dataset.id)].enabled = node.checked;
+    toast(node.checked ? '应用已允许使用' : '应用已禁用');
+  }
   if (node.dataset.action === 'toggleMode') {
     const mode = state.modes.find((item) => item.id === node.dataset.id);
     if (mode) mode.active = node.checked;
@@ -498,6 +645,17 @@ document.addEventListener('submit', (event) => {
     });
     setState({ modal: null, activeTab: 'growth' });
     toast('任务已创建');
+  }
+  if (form.dataset.form === 'zone') {
+    state.zones.push({
+      name: data.get('name'),
+      type: data.get('type'),
+      range: data.get('range'),
+      enabled: true,
+    });
+    state.alerts.unshift({ level: 'ok', title: '守护区域已添加', detail: `${data.get('name')} 已开启进入/离开提醒` });
+    setState({ modal: null, activeTab: 'safety' });
+    toast('守护区域已添加');
   }
   if (form.dataset.form === 'bind') {
     state.child.lastSync = '刚刚';
