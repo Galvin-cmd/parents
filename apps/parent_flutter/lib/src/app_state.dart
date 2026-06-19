@@ -40,6 +40,30 @@ class BootstrapData {
   final List<AppUsage> apps;
   final List<ContactItem> contacts;
   final ReportSummary reports;
+
+  BootstrapData copyWith({
+    ChildSummary? child,
+    LocationSummary? location,
+    List<TrackPoint>? tracks,
+    List<GeoZone>? zones,
+    List<TaskItem>? tasks,
+    List<ControlMode>? modes,
+    List<AppUsage>? apps,
+    List<ContactItem>? contacts,
+    ReportSummary? reports,
+  }) {
+    return BootstrapData(
+      child: child ?? this.child,
+      location: location ?? this.location,
+      tracks: tracks ?? this.tracks,
+      zones: zones ?? this.zones,
+      tasks: tasks ?? this.tasks,
+      modes: modes ?? this.modes,
+      apps: apps ?? this.apps,
+      contacts: contacts ?? this.contacts,
+      reports: reports ?? this.reports,
+    );
+  }
 }
 
 typedef JsonFactory<T> = T Function(Map<String, dynamic> json);
@@ -92,6 +116,21 @@ class ChildSummary {
   final String phone;
   final double balance;
   final String lastSync;
+
+  ChildSummary copyWith({String? lastSync}) {
+    return ChildSummary(
+      id: id,
+      name: name,
+      className: className,
+      avatar: avatar,
+      device: device,
+      battery: battery,
+      online: online,
+      phone: phone,
+      balance: balance,
+      lastSync: lastSync ?? this.lastSync,
+    );
+  }
 }
 
 class LocationSummary {
@@ -142,6 +181,7 @@ class TrackPoint {
 
 class GeoZone {
   const GeoZone({
+    required this.id,
     required this.name,
     required this.type,
     required this.range,
@@ -150,6 +190,7 @@ class GeoZone {
 
   factory GeoZone.fromJson(Map<String, dynamic> json) {
     return GeoZone(
+      id: stringValue(json['id'], 'zone_${stringValue(json['name'], 'local')}'),
       name: stringValue(json['name'], ''),
       type: stringValue(json['type'], ''),
       range: stringValue(json['range'], ''),
@@ -157,14 +198,26 @@ class GeoZone {
     );
   }
 
+  final String id;
   final String name;
   final String type;
   final String range;
   final bool enabled;
+
+  GeoZone copyWith({bool? enabled}) {
+    return GeoZone(
+      id: id,
+      name: name,
+      type: type,
+      range: range,
+      enabled: enabled ?? this.enabled,
+    );
+  }
 }
 
 class TaskItem {
   const TaskItem({
+    required this.id,
     required this.title,
     required this.time,
     required this.reward,
@@ -173,6 +226,10 @@ class TaskItem {
 
   factory TaskItem.fromJson(Map<String, dynamic> json) {
     return TaskItem(
+      id: stringValue(
+        json['id'],
+        'task_${stringValue(json['title'], 'local')}',
+      ),
       title: stringValue(json['title'], ''),
       time: stringValue(json['time'], ''),
       reward: intValue(json['reward'], 0),
@@ -180,14 +237,26 @@ class TaskItem {
     );
   }
 
+  final String id;
   final String title;
   final String time;
   final int reward;
   final bool done;
+
+  TaskItem copyWith({bool? done}) {
+    return TaskItem(
+      id: id,
+      title: title,
+      time: time,
+      reward: reward,
+      done: done ?? this.done,
+    );
+  }
 }
 
 class ControlMode {
   const ControlMode({
+    required this.id,
     required this.name,
     required this.time,
     required this.active,
@@ -195,19 +264,31 @@ class ControlMode {
 
   factory ControlMode.fromJson(Map<String, dynamic> json) {
     return ControlMode(
+      id: stringValue(json['id'], 'mode_${stringValue(json['name'], 'local')}'),
       name: stringValue(json['name'], ''),
       time: stringValue(json['time'], ''),
       active: boolValue(json['active'], false),
     );
   }
 
+  final String id;
   final String name;
   final String time;
   final bool active;
+
+  ControlMode copyWith({bool? active}) {
+    return ControlMode(
+      id: id,
+      name: name,
+      time: time,
+      active: active ?? this.active,
+    );
+  }
 }
 
 class AppUsage {
   const AppUsage({
+    required this.id,
     required this.name,
     required this.minutes,
     required this.enabled,
@@ -216,6 +297,7 @@ class AppUsage {
 
   factory AppUsage.fromJson(Map<String, dynamic> json) {
     return AppUsage(
+      id: stringValue(json['id'], 'app_${stringValue(json['name'], 'local')}'),
       name: stringValue(json['name'], ''),
       minutes: intValue(json['minutes'], 0),
       enabled: boolValue(json['enabled'], true),
@@ -223,14 +305,26 @@ class AppUsage {
     );
   }
 
+  final String id;
   final String name;
   final int minutes;
   final bool enabled;
   final bool locked;
+
+  AppUsage copyWith({bool? enabled}) {
+    return AppUsage(
+      id: id,
+      name: name,
+      minutes: minutes,
+      enabled: enabled ?? this.enabled,
+      locked: locked,
+    );
+  }
 }
 
 class ContactItem {
   const ContactItem({
+    required this.id,
     required this.name,
     required this.relation,
     required this.phone,
@@ -238,12 +332,17 @@ class ContactItem {
 
   factory ContactItem.fromJson(Map<String, dynamic> json) {
     return ContactItem(
+      id: stringValue(
+        json['id'],
+        'contact_${stringValue(json['name'], 'local')}',
+      ),
       name: stringValue(json['name'], ''),
       relation: stringValue(json['relation'], ''),
       phone: stringValue(json['phone'], ''),
     );
   }
 
+  final String id;
   final String name;
   final String relation;
   final String phone;

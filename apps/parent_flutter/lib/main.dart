@@ -43,91 +43,360 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   final _apiClient = ApiClient();
-  late Future<BootstrapData> _bootstrapFuture;
+  final _agentController = TextEditingController();
+  BootstrapData _data = mockBootstrapData;
+  bool _loading = true;
+  bool _apiReady = false;
   int _index = 0;
+  String _agentReply = '今天路线稳定，放学后可以安排阅读任务。';
 
   @override
   void initState() {
     super.initState();
-    _bootstrapFuture = widget.initialData == null
-        ? _load()
-        : Future.value(widget.initialData);
-  }
-
-  Future<BootstrapData> _load() async {
-    try {
-      return await _apiClient.bootstrap();
-    } catch (_) {
-      return mockBootstrapData;
+    if (widget.initialData != null) {
+      _data = widget.initialData!;
+      _loading = false;
+    } else {
+      _load();
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<BootstrapData>(
-      future: _bootstrapFuture,
-      builder: (context, snapshot) {
-        final data = snapshot.data ?? mockBootstrapData;
-        final pages = [
-          WorkbenchPage(data: data),
-          SafetyPage(data: data),
-          GrowthPage(data: data),
-          ControlPage(data: data),
-          ProfilePage(data: data),
-        ];
+  void dispose() {
+    _agentController.dispose();
+    super.dispose();
+  }
 
-        return Scaffold(
-          body: SafeArea(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              child: pages[_index],
-            ),
+  Future<void> _load() async {
+    try {
+      final data = await _apiClient.bootstrap();
+      if (!mounted) return;
+      setState(() {
+        _data = data;
+        _apiReady = true;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _data = mockBootstrapData;
+        _apiReady = false;
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _bindDevice() async {
+    final code = await _textSheet(
+      title: '绑定设备',
+      label: '绑定码',
+      initialValue: 'DXB-2026',
+      action: '绑定',
+    );
+    if (code == null) return;
+    await _runAction(() => _apiClient.bindDevice(_data.child.id, code));
+    setState(() {
+      _data = _data.copyWith(child: _data.child.copyWith(lastSync: '刚刚'));
+    });
+    _toast('设备已绑定并同步');
+  }
+
+  Future<void> _addTask() async {
+    final title = await _textSheet(
+      title: '新建任务',
+      label: '任务内容',
+      initialValue: '阅读课外书 15 分钟',
+      action: '创建',
+    );
+    if (title == null) return;
+    final fallback = TaskItem(
+      id: 'task_local_${DateTime.now().millisecondsSinceEpoch}',
+      title: title,
+      time: '19:30',
+      reward: 6,
+      done: false,
+    );
+    TaskItem task = fallback;
+    await _runAction(() async {
+      task = await _apiClient.createTask(_data.child.id, title, '19:30', 6);
+    });
+    setState(() {
+      _data = _data.copyWith(tasks: [task, ..._data.tasks]);
+    });
+    _toast('任务已加入今日计划');
+  }
+
+  Future<void> _addContact() async {
+    final name = await _textSheet(
+      title: '新增联系人',
+      label: '联系人姓名',
+      initialValue: '外婆',
+      action: '添加',
+    );
+    if (name == null) return;
+    final fallback = ContactItem(
+      id: 'contact_local_${DateTime.now().millisecondsSinceEpoch}',
+      name: name,
+      relation: '家人',
+      phone: '137 0000 7788',
+    );
+    ContactItem contact = fallback;
+    await _runAction(() async {
+      contact = await _apiClient.createContact(
+        _data.child.id,
+        name,
+        '家人',
+        '137 0000 7788',
+      );
+    });
+    setState(() {
+      _data = _data.copyWith(contacts: [..._data.contacts, contact]);
+    });
+    _toast('联系人已加入白名单');
+  }
+
+  Future<void> _toggleTask(TaskItem task) async {
+    final next = !task.done;
+    setState(() {
+      _data = _data.copyWith(
+        tasks: _data.tasks
+            .map(
+              (item) => item.id == task.id ? item.copyWith(done: next) : item,
+            )
+            .toList(),
+      );
+    });
+    await _runAction(() => _apiClient.updateTask(task.id, next), silent: true);
+  }
+
+  Future<void> _toggleZone(GeoZone zone) async {
+    final next = !zone.enabled;
+    setState(() {
+      _data = _data.copyWith(
+        zones: _data.zones
+            .map(
+              (item) =>
+                  item.id == zone.id ? item.copyWith(enabled: next) : item,
+            )
+            .toList(),
+      );
+    });
+    await _runAction(() => _apiClient.updateZone(zone.id, next), silent: true);
+  }
+
+  Future<void> _toggleMode(ControlMode mode) async {
+    final next = !mode.active;
+    setState(() {
+      _data = _data.copyWith(
+        modes: _data.modes
+            .map(
+              (item) => item.id == mode.id ? item.copyWith(active: next) : item,
+            )
+            .toList(),
+      );
+    });
+    await _runAction(
+      () => _apiClient.updateMode(_data.child.id, mode.id, next),
+      silent: true,
+    );
+  }
+
+  Future<void> _toggleApp(AppUsage app) async {
+    final next = !app.enabled;
+    setState(() {
+      _data = _data.copyWith(
+        apps: _data.apps
+            .map(
+              (item) => item.id == app.id ? item.copyWith(enabled: next) : item,
+            )
+            .toList(),
+      );
+    });
+    await _runAction(
+      () => _apiClient.updateApp(_data.child.id, app.id, next),
+      silent: true,
+    );
+  }
+
+  Future<void> _sendAgent() async {
+    final text = _agentController.text.trim();
+    if (text.isEmpty) return;
+    _agentController.clear();
+    setState(() => _agentReply = '正在处理：$text');
+    String reply = '已创建提醒任务，并同步到今日任务列表。';
+    await _runAction(() async {
+      reply = await _apiClient.sendAgentMessage(_data.child.id, text);
+      final fresh = await _apiClient.bootstrap();
+      if (mounted) _data = fresh;
+    }, silent: true);
+    if (!mounted) return;
+    setState(() => _agentReply = reply);
+  }
+
+  Future<void> _runAction(
+    Future<void> Function() action, {
+    bool silent = false,
+  }) async {
+    if (!_apiReady) return;
+    try {
+      await action();
+    } catch (_) {
+      if (!silent) _toast('本地演示已完成，后端暂未同步');
+    }
+  }
+
+  Future<String?> _textSheet({
+    required String title,
+    required String label,
+    required String initialValue,
+    required String action,
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
           ),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: _index,
-            onDestinationSelected: (value) => setState(() => _index = value),
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.dashboard_rounded),
-                label: '工作台',
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
-              NavigationDestination(
-                icon: Icon(Icons.location_on_rounded),
-                label: '安全',
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: label,
+                  border: const OutlineInputBorder(),
+                ),
               ),
-              NavigationDestination(
-                icon: Icon(Icons.auto_awesome_rounded),
-                label: '成长',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.tune_rounded),
-                label: '管控',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.person_rounded),
-                label: '我的',
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () =>
+                      Navigator.pop(context, controller.text.trim()),
+                  child: Text(action),
+                ),
               ),
             ],
           ),
         );
       },
     );
+    controller.dispose();
+    return result == null || result.isEmpty ? null : result;
+  }
+
+  void _toast(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = [
+      WorkbenchPage(
+        data: _data,
+        loading: _loading,
+        apiReady: _apiReady,
+        agentController: _agentController,
+        agentReply: _agentReply,
+        onBindDevice: _bindDevice,
+        onAddTask: _addTask,
+        onToggleTask: _toggleTask,
+        onSendAgent: _sendAgent,
+      ),
+      SafetyPage(data: _data, onToggleZone: _toggleZone),
+      GrowthPage(data: _data, onToggleTask: _toggleTask),
+      ControlPage(
+        data: _data,
+        onToggleMode: _toggleMode,
+        onToggleApp: _toggleApp,
+      ),
+      ProfilePage(data: _data, onAddContact: _addContact),
+    ];
+
+    return Scaffold(
+      body: SafeArea(
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          child: pages[_index],
+        ),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        onDestinationSelected: (value) => setState(() => _index = value),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_rounded),
+            label: '工作台',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.location_on_rounded),
+            label: '安全',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.auto_awesome_rounded),
+            label: '成长',
+          ),
+          NavigationDestination(icon: Icon(Icons.tune_rounded), label: '管控'),
+          NavigationDestination(icon: Icon(Icons.person_rounded), label: '我的'),
+        ],
+      ),
+    );
   }
 }
 
 class WorkbenchPage extends StatelessWidget {
-  const WorkbenchPage({super.key, required this.data});
+  const WorkbenchPage({
+    super.key,
+    required this.data,
+    required this.loading,
+    required this.apiReady,
+    required this.agentController,
+    required this.agentReply,
+    required this.onBindDevice,
+    required this.onAddTask,
+    required this.onToggleTask,
+    required this.onSendAgent,
+  });
 
   final BootstrapData data;
+  final bool loading;
+  final bool apiReady;
+  final TextEditingController agentController;
+  final String agentReply;
+  final VoidCallback onBindDevice;
+  final VoidCallback onAddTask;
+  final ValueChanged<TaskItem> onToggleTask;
+  final VoidCallback onSendAgent;
 
   @override
   Widget build(BuildContext context) {
     final done = data.tasks.where((task) => task.done).length;
     return AppScrollView(
       title: '豆小宝',
-      subtitle: '家长端',
+      subtitle: loading
+          ? '正在同步数据'
+          : apiReady
+          ? '已连接本地后端'
+          : '演示数据模式',
       action: IconButton.filledTonal(
-        onPressed: () {},
+        onPressed: onBindDevice,
         icon: const Icon(Icons.add_rounded),
         tooltip: '添加设备',
       ),
@@ -161,24 +430,53 @@ class WorkbenchPage extends StatelessWidget {
           physics: const NeverScrollableScrollPhysics(),
           mainAxisSpacing: 10,
           crossAxisSpacing: 10,
-          children: const [
-            QuickAction(icon: Icons.call_rounded, label: '呼叫'),
-            QuickAction(icon: Icons.videocam_rounded, label: '视频'),
-            QuickAction(icon: Icons.my_location_rounded, label: '定位'),
-            QuickAction(icon: Icons.notifications_active_rounded, label: '找表'),
+          children: [
+            QuickAction(
+              icon: Icons.call_rounded,
+              label: '呼叫',
+              onTap: () => showInfo(context, '正在呼叫 ${data.child.phone}'),
+            ),
+            QuickAction(
+              icon: Icons.videocam_rounded,
+              label: '视频',
+              onTap: () => showInfo(context, '视频请求已发送'),
+            ),
+            QuickAction(
+              icon: Icons.my_location_rounded,
+              label: '定位',
+              onTap: () => showInfo(context, data.location.place),
+            ),
+            QuickAction(
+              icon: Icons.notifications_active_rounded,
+              label: '找表',
+              onTap: () => showInfo(context, '手表将响铃 60 秒'),
+            ),
           ],
         ),
+        AgentCard(
+          controller: agentController,
+          reply: agentReply,
+          onSend: onSendAgent,
+        ),
         SectionHeader(title: '今日任务', trailing: '$done/${data.tasks.length} 完成'),
-        ...data.tasks.map((task) => TaskTile(task: task)),
+        ...data.tasks.map(
+          (task) => TaskTile(task: task, onTap: () => onToggleTask(task)),
+        ),
+        FilledButton.icon(
+          onPressed: onAddTask,
+          icon: const Icon(Icons.add_task_rounded),
+          label: const Text('新建任务'),
+        ),
       ],
     );
   }
 }
 
 class SafetyPage extends StatelessWidget {
-  const SafetyPage({super.key, required this.data});
+  const SafetyPage({super.key, required this.data, required this.onToggleZone});
 
   final BootstrapData data;
+  final ValueChanged<GeoZone> onToggleZone;
 
   @override
   Widget build(BuildContext context) {
@@ -202,6 +500,10 @@ class SafetyPage extends StatelessWidget {
             title: zone.name,
             subtitle: '${zone.type} · ${zone.range}',
             active: zone.enabled,
+            trailing: Switch(
+              value: zone.enabled,
+              onChanged: (_) => onToggleZone(zone),
+            ),
           ),
         ),
       ],
@@ -210,9 +512,10 @@ class SafetyPage extends StatelessWidget {
 }
 
 class GrowthPage extends StatelessWidget {
-  const GrowthPage({super.key, required this.data});
+  const GrowthPage({super.key, required this.data, required this.onToggleTask});
 
   final BootstrapData data;
+  final ValueChanged<TaskItem> onToggleTask;
 
   @override
   Widget build(BuildContext context) {
@@ -248,16 +551,25 @@ class GrowthPage extends StatelessWidget {
           body: '建议把娱乐模式放在作业完成后开启。',
         ),
         const SectionHeader(title: '可奖励任务'),
-        ...data.tasks.map((task) => TaskTile(task: task)),
+        ...data.tasks.map(
+          (task) => TaskTile(task: task, onTap: () => onToggleTask(task)),
+        ),
       ],
     );
   }
 }
 
 class ControlPage extends StatelessWidget {
-  const ControlPage({super.key, required this.data});
+  const ControlPage({
+    super.key,
+    required this.data,
+    required this.onToggleMode,
+    required this.onToggleApp,
+  });
 
   final BootstrapData data;
+  final ValueChanged<ControlMode> onToggleMode;
+  final ValueChanged<AppUsage> onToggleApp;
 
   @override
   Widget build(BuildContext context) {
@@ -274,6 +586,10 @@ class ControlPage extends StatelessWidget {
             title: mode.name,
             subtitle: mode.time,
             active: mode.active,
+            trailing: Switch(
+              value: mode.active,
+              onChanged: (_) => onToggleMode(mode),
+            ),
           ),
         ),
         const SectionHeader(title: '应用使用'),
@@ -283,6 +599,10 @@ class ControlPage extends StatelessWidget {
             title: app.name,
             subtitle: '${app.minutes} 分钟 · ${app.enabled ? '允许使用' : '已停用'}',
             active: app.enabled,
+            trailing: Switch(
+              value: app.enabled,
+              onChanged: app.locked ? null : (_) => onToggleApp(app),
+            ),
           ),
         ),
       ],
@@ -291,17 +611,34 @@ class ControlPage extends StatelessWidget {
 }
 
 class ProfilePage extends StatelessWidget {
-  const ProfilePage({super.key, required this.data});
+  const ProfilePage({
+    super.key,
+    required this.data,
+    required this.onAddContact,
+  });
 
   final BootstrapData data;
+  final VoidCallback onAddContact;
 
   @override
   Widget build(BuildContext context) {
     return AppScrollView(
       title: '我的',
       subtitle: '家庭和设备',
+      action: IconButton.filledTonal(
+        onPressed: onAddContact,
+        icon: const Icon(Icons.person_add_alt_1_rounded),
+        tooltip: '新增联系人',
+      ),
       children: [
         ChildHero(child: data.child, location: data.location),
+        ColorPanel(
+          color: const Color(0xFF7B61FF),
+          icon: Icons.watch_rounded,
+          title: data.child.device,
+          body:
+              '${data.child.phone} · 话费 ${data.child.balance.toStringAsFixed(1)} 元',
+        ),
         const SectionHeader(title: '白名单联系人'),
         ...data.contacts.map(
           (contact) => PlainTile(
@@ -332,6 +669,10 @@ class AppScrollView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final spaced = children
+        .expand((child) => [child, const SizedBox(height: 12)])
+        .toList();
+    if (spaced.isNotEmpty) spaced.removeLast();
     return ListView(
       key: PageStorageKey(title),
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -361,11 +702,62 @@ class AppScrollView extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        ...children
-            .expand((child) => [child, const SizedBox(height: 12)])
-            .toList()
-          ..removeLast(),
+        ...spaced,
       ],
+    );
+  }
+}
+
+class AgentCard extends StatelessWidget {
+  const AgentCard({
+    super.key,
+    required this.controller,
+    required this.reply,
+    required this.onSend,
+  });
+
+  final TextEditingController controller;
+  final String reply;
+  final VoidCallback onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, color: Color(0xFFFFB000)),
+              SizedBox(width: 8),
+              Text('家庭 Agent', style: TextStyle(fontWeight: FontWeight.w800)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(reply, style: const TextStyle(color: Colors.black87)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            textInputAction: TextInputAction.send,
+            onSubmitted: (_) => onSend(),
+            decoration: InputDecoration(
+              hintText: '例如：19:30 提醒豆豆阅读',
+              suffixIcon: IconButton(
+                onPressed: onSend,
+                icon: const Icon(Icons.send_rounded),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -525,15 +917,21 @@ class SectionHeader extends StatelessWidget {
 }
 
 class QuickAction extends StatelessWidget {
-  const QuickAction({super.key, required this.icon, required this.label});
+  const QuickAction({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
 
   final IconData icon;
   final String label;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return FilledButton.tonal(
-      onPressed: () {},
+      onPressed: onTap,
       style: FilledButton.styleFrom(
         padding: const EdgeInsets.symmetric(vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
@@ -551,9 +949,10 @@ class QuickAction extends StatelessWidget {
 }
 
 class TaskTile extends StatelessWidget {
-  const TaskTile({super.key, required this.task});
+  const TaskTile({super.key, required this.task, required this.onTap});
 
   final TaskItem task;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -564,6 +963,7 @@ class TaskTile extends StatelessWidget {
       title: task.title,
       subtitle: '${task.time} · 奖励 ${task.reward} 颗星',
       active: task.done,
+      onTap: onTap,
     );
   }
 }
@@ -591,47 +991,59 @@ class PlainTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.active,
+    this.trailing,
+    this.onTap,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final bool active;
+  final Widget? trailing;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          CircleAvatar(
-            backgroundColor: active
-                ? const Color(0xFFE6F7F4)
-                : const Color(0xFFF1F1F1),
-            child: Icon(
-              icon,
-              color: active ? const Color(0xFF128A7E) : Colors.black45,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: active
+                    ? const Color(0xFFE6F7F4)
+                    : const Color(0xFFF1F1F1),
+                child: Icon(
+                  icon,
+                  color: active ? const Color(0xFF128A7E) : Colors.black45,
                 ),
-                const SizedBox(height: 4),
-                Text(subtitle, style: const TextStyle(color: Colors.black54)),
-              ],
-            ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing != null) trailing!,
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -684,4 +1096,8 @@ class ColorPanel extends StatelessWidget {
       ),
     );
   }
+}
+
+void showInfo(BuildContext context, String text) {
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 }
